@@ -24,6 +24,7 @@ def find_duplicate_groups(folder):
     Returns a dict mapping base_name -> list of full filenames, only for groups
     with more than one file (i.e. actual duplicates).
     """
+    folder = os.path.normpath(os.path.abspath(folder))
     groups = {}
     for fname in sorted(os.listdir(folder)):
         fpath = os.path.join(folder, fname)
@@ -249,7 +250,7 @@ class App(tk.Tk):
     def _select_folder(self):
         folder = filedialog.askdirectory(title="Select folder with images")
         if folder:
-            folder = os.path.normpath(folder)
+            folder = os.path.normpath(os.path.abspath(folder))
             self.selected_folder = folder
             self.lbl_folder.configure(text=f"Selected Folder: {folder}")
             self._log(f"Folder selected: {folder}")
@@ -270,7 +271,11 @@ class App(tk.Tk):
             )
             return
 
-        keep_count = self.keep_var.get()
+        try:
+            keep_count = self.keep_var.get()
+        except tk.TclError:
+            messagebox.showwarning("Invalid value", "Keep count must be a number.")
+            return
         create_folder = self.create_folder_var.get()
         remove_extra = self.remove_extra_var.get()
 
@@ -337,19 +342,26 @@ class App(tk.Tk):
             for f in extras:
                 src = os.path.join(folder, f)
 
-                if create_folder and remove_extra:
-                    dst = os.path.join(dup_folder, f)
-                    shutil.move(src, dst)
-                    self._log(f"  Moved to duplicates: {f}")
-                elif create_folder:
-                    dst = os.path.join(dup_folder, f)
-                    shutil.copy2(src, dst)
-                    self._log(f"  Copied to duplicates: {f}")
-                elif remove_extra:
-                    os.remove(src)
-                    self._log(f"  Removed: {f}")
-                else:
-                    self._log(f"  Extra duplicate (no action): {f}")
+                try:
+                    if create_folder and remove_extra:
+                        dst = os.path.join(dup_folder, f)
+                        if os.path.exists(dst):
+                            os.remove(dst)
+                        shutil.move(src, dst)
+                        self._log(f"  Moved to duplicates: {f}")
+                    elif create_folder:
+                        dst = os.path.join(dup_folder, f)
+                        shutil.copy2(src, dst)
+                        self._log(f"  Copied to duplicates: {f}")
+                    elif remove_extra:
+                        os.remove(src)
+                        self._log(f"  Removed: {f}")
+                    else:
+                        self._log(f"  Extra duplicate (no action): {f}")
+                except FileNotFoundError:
+                    self._log(f"  Skipped (file not found): {f}")
+                except OSError as e:
+                    self._log(f"  Error processing {f}: {e}")
 
                 processed_images += 1
                 self.lbl_images.configure(
