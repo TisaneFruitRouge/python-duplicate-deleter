@@ -2,6 +2,7 @@ import os
 import re
 import shutil
 import tkinter as tk
+import traceback
 from tkinter import filedialog, messagebox, ttk
 
 
@@ -248,6 +249,7 @@ class App(tk.Tk):
     def _select_folder(self):
         folder = filedialog.askdirectory(title="Select folder with images")
         if folder:
+            folder = os.path.normpath(folder)
             self.selected_folder = folder
             self.lbl_folder.configure(text=f"Selected Folder: {folder}")
             self._log(f"Folder selected: {folder}")
@@ -259,6 +261,13 @@ class App(tk.Tk):
     def _start_processing(self):
         if not self.selected_folder:
             messagebox.showwarning("No folder", "Please select a folder first.")
+            return
+
+        if not os.path.isdir(self.selected_folder):
+            messagebox.showerror(
+                "Folder not found",
+                f"The selected folder no longer exists:\n{self.selected_folder}",
+            )
             return
 
         keep_count = self.keep_var.get()
@@ -277,12 +286,14 @@ class App(tk.Tk):
         try:
             self._process(self.selected_folder, keep_count, create_folder, remove_extra)
         except Exception as e:
-            self._log(f"Error: {e}")
+            tb = traceback.format_exc()
+            self._log(f"Error: {e}\n{tb}")
             messagebox.showerror("Error", str(e))
         finally:
             self.btn_start.configure(state="normal")
 
     def _process(self, folder, keep_count, create_folder, remove_extra):
+        folder = os.path.normpath(os.path.abspath(folder))
         groups = find_duplicate_groups(folder)
 
         if not groups:
