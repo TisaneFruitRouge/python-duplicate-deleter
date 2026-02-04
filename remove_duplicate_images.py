@@ -213,7 +213,7 @@ class App(tk.Tk):
         self.create_folder_var = tk.BooleanVar(value=True)
         chk_folder = ttk.Checkbutton(
             options_frame,
-            text="Create new folder for duplicates",
+            text="Create new folder for extra duplicates",
             variable=self.create_folder_var,
             style="TCheckbutton",
         )
@@ -297,80 +297,95 @@ class App(tk.Tk):
         finally:
             self.btn_start.configure(state="normal")
 
-    def _process(self, folder, keep_count, create_folder, remove_extra):
-        folder = os.path.normpath(os.path.abspath(folder))
-        groups = find_duplicate_groups(folder)
+    def _process(self, root_folder, keep_count, create_folder, remove_extra):
+        root_folder = os.path.normpath(os.path.abspath(root_folder))
 
-        if not groups:
-            self._log("No duplicate groups found.")
+        # Collect all folders to process (root + subfolders), skip "NEW" folders
+        folders_to_process = []
+        for dirpath, dirnames, _filenames in os.walk(root_folder):
+            dirnames[:] = [d for d in dirnames if d != "NEW"]
+            folders_to_process.append(os.path.normpath(dirpath))
+
+        # Pre-scan: count total images and folders with duplicates
+        folder_groups = []
+        total_images = 0
+        for folder in folders_to_process:
+            groups = find_duplicate_groups(folder)
+            if groups:
+                folder_groups.append((folder, groups))
+                total_images += sum(len(files) for files in groups.values())
+
+        total_folders = len(folder_groups)
+
+        if not folder_groups:
+            self._log("No duplicate groups found in any folder.")
             self.lbl_images.configure(text="Images Processed: 0 / 0")
-            self.lbl_folders.configure(text="Folders Processed: 0 / 0")
+            self.lbl_folders.configure(text=f"Folders Processed: 0 / 0")
             return
 
-        total_images = sum(len(files) for files in groups.values())
-        total_groups = len(groups)
-        processed_images = 0
-        processed_groups = 0
-
         self.lbl_images.configure(text=f"Images Processed: 0 / {total_images}")
-        self.lbl_folders.configure(text=f"Folders Processed: 0 / {total_groups}")
+        self.lbl_folders.configure(text=f"Folders Processed: 0 / {total_folders}")
 
-        dup_folder = None
-        if create_folder:
-            dup_folder = os.path.join(folder, "duplicates")
-            os.makedirs(dup_folder, exist_ok=True)
-            self._log(f"Created duplicates folder: {dup_folder}")
+        processed_images = 0
+        processed_folders = 0
 
-        for base, files in groups.items():
-            processed_groups += 1
-            self._log(f"\nGroup: '{base}' ({len(files)} files)")
+        for folder, groups in folder_groups:
+            processed_folders += 1
+            self._log(f"\n--- Folder: {folder} ---")
 
-            # Sort files so processing order is deterministic (by original name)
-            files_sorted = sorted(files)
+            dup_folder = None
+            if create_folder:
+                dup_folder = os.path.join(folder, "NEW")
+                os.makedirs(dup_folder, exist_ok=True)
+                self._log(f"Created folder: {dup_folder}")
 
-            to_keep = files_sorted[:keep_count]
-            extras = files_sorted[keep_count:]
+            for base, files in groups.items():
+                self._log(f"\nGroup: '{base}' ({len(files)} files)")
 
-            for f in to_keep:
-                self._log(f"  Keeping: {f}")
-                processed_images += 1
-                self.lbl_images.configure(
-                    text=f"Images Processed: {processed_images} / {total_images}"
-                )
-                self.update_idletasks()
+                files_sorted = sorted(files)
+                to_keep = files_sorted[:keep_count]
+                extras = files_sorted[keep_count:]
 
-            for f in extras:
-                src = os.path.join(folder, f)
+                for f in to_keep:
+                    self._log(f"  Keeping: {f}")
+                    processed_images += 1
+                    self.lbl_images.configure(
+                        text=f"Images Processed: {processed_images} / {total_images}"
+                    )
+                    self.update_idletasks()
 
-                try:
-                    if create_folder and remove_extra:
-                        dst = os.path.join(dup_folder, f)
-                        if os.path.exists(dst):
-                            os.remove(dst)
-                        shutil.move(src, dst)
-                        self._log(f"  Moved to duplicates: {f}")
-                    elif create_folder:
-                        dst = os.path.join(dup_folder, f)
-                        shutil.copy2(src, dst)
-                        self._log(f"  Copied to duplicates: {f}")
-                    elif remove_extra:
-                        os.remove(src)
-                        self._log(f"  Removed: {f}")
-                    else:
-                        self._log(f"  Extra duplicate (no action): {f}")
-                except FileNotFoundError:
-                    self._log(f"  Skipped (file not found): {f}")
-                except OSError as e:
-                    self._log(f"  Error processing {f}: {e}")
+                for f in extras:
+                    src = os.path.join(folder, f)
 
-                processed_images += 1
-                self.lbl_images.configure(
-                    text=f"Images Processed: {processed_images} / {total_images}"
-                )
-                self.update_idletasks()
+                    try:
+                        if create_folder and remove_extra:
+                            dst = os.path.join(dup_folder, f)
+                            if os.path.exists(dst):
+                                os.remove(dst)
+                            shutil.move(src, dst)
+                            self._log(f"  Moved to NEW: {f}")
+                        elif create_folder:
+                            dst = os.path.join(dup_folder, f)
+                            shutil.copy2(src, dst)
+                            self._log(f"  Copied to NEW: {f}")
+                        elif remove_extra:
+                            os.remove(src)
+                            self._log(f"  Removed: {f}")
+                        else:
+                            self._log(f"  Extra duplicate (no action): {f}")
+                    except FileNotFoundError:
+                        self._log(f"  Skipped (file not found): {f}")
+                    except OSError as e:
+                        self._log(f"  Error processing {f}: {e}")
+
+                    processed_images += 1
+                    self.lbl_images.configure(
+                        text=f"Images Processed: {processed_images} / {total_images}"
+                    )
+                    self.update_idletasks()
 
             self.lbl_folders.configure(
-                text=f"Folders Processed: {processed_groups} / {total_groups}"
+                text=f"Folders Processed: {processed_folders} / {total_folders}"
             )
             self.update_idletasks()
 
