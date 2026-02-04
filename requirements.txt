@@ -1,0 +1,8 @@
+# Note: tkinter is part of the standard library but may need to be
+# installed separately on some Linux distributions:
+#   Ubuntu/Debian: sudo apt-get install python3-tk
+#   Fedora:        sudo dnf install python3-tkinter
+#   Arch:          sudo pacman -S tk
+
+# Used to compile the application into a standalone .exe
+pyinstaller

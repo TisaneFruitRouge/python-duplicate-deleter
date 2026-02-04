@@ -1,0 +1,3 @@
+([('RemoveDuplicateImages',
+   '/Users/vincent/Travail/Fiverr/iosif0/dist/RemoveDuplicateImages',
+   'EXECUTABLE')],)
