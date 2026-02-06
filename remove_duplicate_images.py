@@ -55,7 +55,7 @@ class App(tk.Tk):
         super().__init__()
         self.title("REMOVE DUPLICATE IMAGES")
         self.geometry("1024x768")
-        self.minsize(700, 600)
+        self.minsize(500, 450)
         self.configure(bg=BG)
 
         self.selected_folder = None
@@ -123,7 +123,7 @@ class App(tk.Tk):
             command=self._select_folder,
             style="TButton",
         )
-        btn_select.pack(fill="x", padx=pad_x, pady=(16, 8))
+        btn_select.pack(fill="x", padx=pad_x, pady=(12, 6))
 
         # --- Selected Folder label ---
         self.lbl_folder = ttk.Label(
@@ -151,6 +151,7 @@ class App(tk.Tk):
             highlightcolor=ACCENT,
             padx=8,
             pady=8,
+            height=4,
         )
         scrollbar = ttk.Scrollbar(log_frame, command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=scrollbar.set)
@@ -177,7 +178,7 @@ class App(tk.Tk):
 
         # --- Separator ---
         sep = ttk.Separator(self, orient="horizontal")
-        sep.pack(fill="x", padx=pad_x, pady=(6, 12))
+        sep.pack(fill="x", padx=pad_x, pady=(4, 6))
 
         # --- Options ---
         options_frame = ttk.Frame(self)
@@ -209,25 +210,33 @@ class App(tk.Tk):
 
         ttk.Label(row_keep, text="duplicate(s)", style="TLabel").pack(side="left")
 
-        # Create new folder checkbox
-        self.create_folder_var = tk.BooleanVar(value=True)
-        chk_folder = ttk.Checkbutton(
-            options_frame,
-            text="Create new folder for extra duplicates",
-            variable=self.create_folder_var,
-            style="TCheckbutton",
-        )
-        chk_folder.pack(fill="x", pady=(0, 4), anchor="w")
+        # Mode selection (mutually exclusive)
+        self.mode_var = tk.StringVar(value="transfer")
 
-        # Remove extra duplicates checkbox
-        self.remove_extra_var = tk.BooleanVar(value=True)
-        chk_remove = ttk.Checkbutton(
-            options_frame,
-            text="Remove extra duplicates",
-            variable=self.remove_extra_var,
-            style="TCheckbutton",
+        self.style.configure(
+            "TRadiobutton",
+            background=BG,
+            foreground=FG,
+            font=("Helvetica", 13),
         )
-        chk_remove.pack(fill="x", pady=(0, 4), anchor="w")
+
+        rb_transfer = ttk.Radiobutton(
+            options_frame,
+            text="Transfer duplicates to NEW folder (keep originals)",
+            variable=self.mode_var,
+            value="transfer",
+            style="TRadiobutton",
+        )
+        rb_transfer.pack(fill="x", pady=(0, 4), anchor="w")
+
+        rb_remove = ttk.Radiobutton(
+            options_frame,
+            text="Remove duplicates",
+            variable=self.mode_var,
+            value="remove",
+            style="TRadiobutton",
+        )
+        rb_remove.pack(fill="x", pady=(0, 4), anchor="w")
 
         # --- Start Processing button ---
         self.btn_start = ttk.Button(
@@ -236,7 +245,7 @@ class App(tk.Tk):
             command=self._start_processing,
             style="Accent.TButton",
         )
-        self.btn_start.pack(fill="x", padx=pad_x, pady=(12, 16))
+        self.btn_start.pack(fill="x", padx=pad_x, pady=(8, 12))
 
     # --- Helpers ---
 
@@ -276,8 +285,7 @@ class App(tk.Tk):
         except tk.TclError:
             messagebox.showwarning("Invalid value", "Keep count must be a number.")
             return
-        create_folder = self.create_folder_var.get()
-        remove_extra = self.remove_extra_var.get()
+        mode = self.mode_var.get()
 
         if keep_count < 1:
             messagebox.showwarning("Invalid value", "Keep count must be at least 1.")
@@ -289,7 +297,7 @@ class App(tk.Tk):
         self.log_text.configure(state="disabled")
 
         try:
-            self._process(self.selected_folder, keep_count, create_folder, remove_extra)
+            self._process(self.selected_folder, keep_count, mode)
         except Exception as e:
             tb = traceback.format_exc()
             self._log(f"Error: {e}\n{tb}")
@@ -297,8 +305,11 @@ class App(tk.Tk):
         finally:
             self.btn_start.configure(state="normal")
 
-    def _process(self, root_folder, keep_count, create_folder, remove_extra):
+    def _process(self, root_folder, keep_count, mode):
         root_folder = os.path.normpath(os.path.abspath(root_folder))
+
+        # NEW folder is a sibling of the selected folder
+        new_root = os.path.join(os.path.dirname(root_folder), "NEW")
 
         # Collect all folders to process (root + subfolders), skip "NEW" folders
         folders_to_process = []
@@ -320,7 +331,7 @@ class App(tk.Tk):
         if not folder_groups:
             self._log("No duplicate groups found in any folder.")
             self.lbl_images.configure(text="Images Processed: 0 / 0")
-            self.lbl_folders.configure(text=f"Folders Processed: 0 / 0")
+            self.lbl_folders.configure(text="Folders Processed: 0 / 0")
             return
 
         self.lbl_images.configure(text=f"Images Processed: 0 / {total_images}")
@@ -333,11 +344,13 @@ class App(tk.Tk):
             processed_folders += 1
             self._log(f"\n--- Folder: {folder} ---")
 
+            # For transfer mode, compute the mirrored subfolder inside NEW
             dup_folder = None
-            if create_folder:
-                dup_folder = os.path.join(folder, "NEW")
+            if mode == "transfer":
+                rel = os.path.relpath(folder, root_folder)
+                dup_folder = os.path.join(new_root, rel) if rel != "." else new_root
                 os.makedirs(dup_folder, exist_ok=True)
-                self._log(f"Created folder: {dup_folder}")
+                self._log(f"Destination folder: {dup_folder}")
 
             for base, files in groups.items():
                 self._log(f"\nGroup: '{base}' ({len(files)} files)")
@@ -358,21 +371,13 @@ class App(tk.Tk):
                     src = os.path.join(folder, f)
 
                     try:
-                        if create_folder and remove_extra:
-                            dst = os.path.join(dup_folder, f)
-                            if os.path.exists(dst):
-                                os.remove(dst)
-                            shutil.move(src, dst)
-                            self._log(f"  Moved to NEW: {f}")
-                        elif create_folder:
+                        if mode == "transfer":
                             dst = os.path.join(dup_folder, f)
                             shutil.copy2(src, dst)
                             self._log(f"  Copied to NEW: {f}")
-                        elif remove_extra:
+                        else:
                             os.remove(src)
                             self._log(f"  Removed: {f}")
-                        else:
-                            self._log(f"  Extra duplicate (no action): {f}")
                     except FileNotFoundError:
                         self._log(f"  Skipped (file not found): {f}")
                     except OSError as e:
