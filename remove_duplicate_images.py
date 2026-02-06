@@ -222,7 +222,7 @@ class App(tk.Tk):
 
         rb_transfer = ttk.Radiobutton(
             options_frame,
-            text="Transfer duplicates to NEW folder (keep originals)",
+            text="Transfer duplicates to NEW folder",
             variable=self.mode_var,
             value="transfer",
             style="TRadiobutton",
@@ -373,8 +373,8 @@ class App(tk.Tk):
                     try:
                         if mode == "transfer":
                             dst = os.path.join(dup_folder, f)
-                            shutil.copy2(src, dst)
-                            self._log(f"  Copied to NEW: {f}")
+                            shutil.move(src, dst)
+                            self._log(f"  Moved to NEW: {f}")
                         else:
                             os.remove(src)
                             self._log(f"  Removed: {f}")
